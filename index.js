@@ -3,6 +3,7 @@ const google = require('googleapis');
 const gmail = google.gmail('v1');
 const cheerio = require('cheerio');
 const DebugAgent = require('@google-cloud/debug-agent');
+const { promisify } = require('util');
 
 DebugAgent.start();
 
@@ -58,40 +59,40 @@ exports.cheerioSample = (req, res) => {
 }
 
 exports.oauth2init = (req, res) => {
-    const scopes = [
-      'https://www.googleapis.com/auth/gmail.readonly'
-    ];
-  
-    const authUrl = oauth2Client.generateAuthUrl({
-      access_type: 'online',
-      scope: scopes
-    });
-    res.redirect(authUrl);
+  const scopes = [
+    'https://www.googleapis.com/auth/gmail.readonly'
+  ];
+
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'online',
+    scope: scopes
+  });
+  res.redirect(authUrl);
 };
 
 exports.oauth2callback = (req, res) => {
-    // Get authorization details from request
-    const code = req.query.code;
-  
-    return new Promise((resolve, reject) => {
-      // OAuth2: Exchange authorization code for access token
-      oauth2Client.getToken(code, (err, token) => {
-        if (err) {
-          return reject(err);
-        }
-        return resolve(token);
-      });
+  // Get authorization details from request
+  const code = req.query.code;
+
+  return new Promise((resolve, reject) => {
+    // OAuth2: Exchange authorization code for access token
+    oauth2Client.getToken(code, (err, token) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve(token);
+    });
+  })
+    .then((token) => {
+      // Respond with OAuth token stored as a cookie
+      res.cookie('token', JSON.stringify(token));
+      res.redirect(prefix[env] + '/listEmailsFromAmazon');
     })
-      .then((token) => {
-        // Respond with OAuth token stored as a cookie
-        res.cookie('token', JSON.stringify(token));
-        res.redirect(prefix[env] + '/listEmailsFromAmazon');
-      })
-      .catch((err) => {
-        // Handle error
-        console.error(err);
-        res.status(500).send('Something went wrong; check the logs.');
-      });
+    .catch((err) => {
+      // Handle error
+      console.error(err);
+      res.status(500).send('Something went wrong; check the logs.');
+    });
 };
 
 exports.listEmailsFromAmazon = (req, res) => {
@@ -107,7 +108,7 @@ exports.listEmailsFromAmazon = (req, res) => {
   // Get Emails
   oauth2Client.credentials = token;
   return new Promise((resolve, reject) => {
-    gmail.users.messages.list({ 
+    gmail.users.messages.list({
       auth: oauth2Client,
       userId: 'me',
       q: 'from:auto-confirm@amazon.co.jp'
@@ -119,31 +120,26 @@ exports.listEmailsFromAmazon = (req, res) => {
       return resolve(getEmail(response.messages[0].id));
     });
   })
-  .then(message => {
-    const result = new Buffer(message.parts[1].body.data, 'base64').toString().replace(/[\\$'"]/g, "");
-    res.set('Content-Type', 'application/json');
-    res.status(200).send(JSON.stringify(scrapeOrderFromHtmlStr(result)));
-  })
-  .catch(err => {
-    console.error(err);
-    res.set('Content-Type', 'application/json');
-    res.status(500).send(JSON.stringify(err));
-  });
+    .then(message => {
+      console.log(message);
+      const result = new Buffer(message.parts[1].body.data, 'base64').toString().replace(/[\\$'"]/g, "");
+      res.set('Content-Type', 'application/json');
+      res.status(200).send(JSON.stringify(scrapeOrderFromHtmlStr(result)));
+    })
+    .catch(err => {
+      console.error(err);
+      res.set('Content-Type', 'application/json');
+      res.status(500).send(JSON.stringify(err));
+    });
 }
 
-function getEmail(id) {
-  return new Promise((resolve, reject) => {
-    gmail.users.messages.get({
-      auth: oauth2Client,
-      userId: 'me',
-      id: id
-    }, (err, response) => {
-      if (err) {
-        return reject(err);
-      }
-
-      return resolve(response.payload);
-    });
+const getEmail = async (id) => {
+  return promisify(gmail.users.messages.get)({
+    auth: oauth2Client,
+    userId: 'me',
+    id: id
+  }).then(res => {
+    return res.payload;
   });
 }
 
