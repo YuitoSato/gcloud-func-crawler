@@ -26,22 +26,35 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 exports.cheerioSample = (req, res) => {
-  const text = fs.readFileSync('./sample2.txt', 'utf-8');
+  const text = fs.readFileSync('./sample/sample2.txt', 'utf-8');
   const $ = cheerio.load(text.replace(/[\\$'"]/g, ""));
   const html = $('td[class=name]').html()
-  const newHtml = html
+
+  const productText = cheerio.load(text.replace(/[\\$'"]/g, ""))('td[class=name]').html()
     .replace(/<br>/, '<div class=\"category\">')
     .replace(/<br>/, '</div><div class=\"distributor\">')
     .replace(/<br>/, '</div>');
-  const $2 = cheerio.load(newHtml);
 
-  const name = $('td[class=name] a').text();
-  const category = $('td[class=name]').children().eq(3).text();
+  const $product = cheerio.load(productText);
 
-  const result = name + category;
-  res.set('Content-Type', 'text/plain');
+  const name = $product('a').text().trim();
+  const category = $product('div[class=category]').text().trim();
+  const distributor = $product('div[class=distributor]').text().trim();
+  const price = $('td[class=price] strong').text().replace(/[￥,]/g, '').trim();
+  const orderedAt = $('table[id=orderDetails] tbody tr td span').text().replace(/注文日：/, '').trim();
+
+  const result = {
+    name: name,
+    category: category,
+    distributor: distributor,
+    price: price,
+    orderedAt: orderedAt
+  }
+
+  res.set('Content-Type', 'application/json');
   console.log(result);
-  res.status(200).send($2('div[class=distributor]').text());
+  $('td[class=name] a').replaceWith('').text()
+  res.status(200).send(JSON.stringify(result));
 }
 
 exports.oauth2init = (req, res) => {
@@ -107,17 +120,9 @@ exports.listEmailsFromAmazon = (req, res) => {
     });
   })
   .then(message => {
-    const result = new Buffer(message.parts[1].body.data, 'base64').toString();
-
-    const $html = cheerio.load(result);
-
-    
-    
-  
-
-    console.log(result);
+    const result = new Buffer(message.parts[1].body.data, 'base64').toString().replace(/[\\$'"]/g, "");
     res.set('Content-Type', 'application/json');
-    res.status(200).send(JSON.stringify(result));
+    res.status(200).send(JSON.stringify(scrapeOrderFromHtmlStr(result)));
   })
   .catch(err => {
     console.error(err);
@@ -141,3 +146,33 @@ function getEmail(id) {
     });
   });
 }
+
+function scrapeOrderFromHtmlStr(htmlStr) {
+  const $ = cheerio.load(htmlStr);
+
+  const productText = $('td[class=name]').html()
+    .replace(/<br>/, '<div class=\"category\">')
+    .replace(/<br>/, '</div><div class=\"distributor\">')
+    .replace(/<br>/, '</div>');
+
+  const $product = cheerio.load(productText);
+
+  const name = $product('a').text().trim();
+  const category = $product('div[class=category]').text().trim();
+  const distributor = $product('div[class=distributor]').text().trim();
+  const price = $('td[class=price] strong').text().replace(/[￥,]/g, '').trim();
+  const orderedAt = $('table[id=orderDetails] tbody tr td span').text().replace(/注文日：/, '').trim();
+
+  return {
+    name: name,
+    category: category,
+    distributor: distributor,
+    price: price,
+    orderedAt: orderedAt
+  };
+}
+
+exports.asyncF = async (req, res) => {
+  res.set('Content-Type', 'application/json');
+  res.status(200).send(JSON.stringify(1));
+};
