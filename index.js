@@ -1,6 +1,7 @@
 const fs = require('fs');
 const google = require('googleapis');
 const gmail = google.gmail('v1');
+const cheerio = require('cheerio');
 const DebugAgent = require('@google-cloud/debug-agent');
 
 DebugAgent.start();
@@ -23,6 +24,25 @@ const oauth2Client = new google.auth.OAuth2(
   clientSecretJson[env].client_secret,
   clientSecretJson[env].redirect_uris[0]
 );
+
+exports.cheerioSample = (req, res) => {
+  const text = fs.readFileSync('./sample2.txt', 'utf-8');
+  const $ = cheerio.load(text.replace(/[\\$'"]/g, ""));
+  const html = $('td[class=name]').html()
+  const newHtml = html
+    .replace(/<br>/, '<div class=\"category\">')
+    .replace(/<br>/, '</div><div class=\"distributor\">')
+    .replace(/<br>/, '</div>');
+  const $2 = cheerio.load(newHtml);
+
+  const name = $('td[class=name] a').text();
+  const category = $('td[class=name]').children().eq(3).text();
+
+  const result = name + category;
+  res.set('Content-Type', 'text/plain');
+  console.log(result);
+  res.status(200).send($2('div[class=distributor]').text());
+}
 
 exports.oauth2init = (req, res) => {
     const scopes = [
@@ -87,7 +107,11 @@ exports.listEmailsFromAmazon = (req, res) => {
     });
   })
   .then(message => {
-    const result = new Buffer(message.parts[1].body.data, 'base64').toString()
+    const result = new Buffer(message.parts[1].body.data, 'base64').toString();
+
+    const $html = cheerio.load(result);
+
+    
     
   
 
