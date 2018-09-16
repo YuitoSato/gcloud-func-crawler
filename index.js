@@ -7,9 +7,6 @@ const { promisify } = require('util');
 
 DebugAgent.start();
 
-const myModule = require('./hoge');
-let val = myModule.hello();
-
 const env = "local";
 
 const prefix = {
@@ -53,7 +50,6 @@ exports.cheerioSample = (req, res) => {
   }
 
   res.set('Content-Type', 'application/json');
-  console.log(result);
   $('td[class=name] a').replaceWith('').text()
   res.status(200).send(JSON.stringify(result));
 }
@@ -71,7 +67,6 @@ exports.oauth2init = (req, res) => {
 };
 
 exports.oauth2callback = (req, res) => {
-  // Get authorization details from request
   const code = req.query.code;
 
   return new Promise((resolve, reject) => {
@@ -84,50 +79,46 @@ exports.oauth2callback = (req, res) => {
     });
   })
     .then((token) => {
-      // Respond with OAuth token stored as a cookie
       res.cookie('token', JSON.stringify(token));
       res.redirect(prefix[env] + '/listEmailsFromAmazon');
     })
     .catch((err) => {
-      // Handle error
-      console.error(err);
       res.status(500).send('Something went wrong; check the logs.');
     });
+
+  // return promisify(oauth2Client.getToken)(code)
+  //   .then((token) => {
+  //     res.cookie('token', JSON.stringify(token));
+  //     res.redirect(prefix[env] + '/listEmailsFromAmazon');
+  //   })
+  //   .catch((err) => {
+  //     res.status(500).send('Something went wrong; check the logs.');
+  //   });
 };
 
-exports.listEmailsFromAmazon = (req, res) => {
+exports.listEmailsFromAmazon = async (req, res) => {
   const cookieStr = (req.headers.cookie || '').split('=')[1];
-  console.log(cookieStr);
   const token = cookieStr ? JSON.parse(decodeURIComponent(cookieStr)) : null;
 
-  // If the stored OAuth 2.0 token has expired, request a new one
   if (!token || !token.expiry_date || token.expiry_date < Date.now() + 60000) {
     return res.redirect(prefix[env] + '/oauth2init').end();
   }
 
-  // Get Emails
   oauth2Client.credentials = token;
-  return new Promise((resolve, reject) => {
-    gmail.users.messages.list({
+  return promisify(gmail.users.messages.list)
+    ({
       auth: oauth2Client,
       userId: 'me',
       q: 'from:auto-confirm@amazon.co.jp'
-    }, (err, response) => {
-      if (err) {
-        return reject(err);
-      }
-
-      return resolve(getEmail(response.messages[0].id));
-    });
-  })
+    })
+    .then(res => res.messages)
+    .then(messages => getEmail(messages[0].id))
     .then(message => {
-      console.log(message);
       const result = new Buffer(message.parts[1].body.data, 'base64').toString().replace(/[\\$'"]/g, "");
       res.set('Content-Type', 'application/json');
       res.status(200).send(JSON.stringify(scrapeOrderFromHtmlStr(result)));
     })
     .catch(err => {
-      console.error(err);
       res.set('Content-Type', 'application/json');
       res.status(500).send(JSON.stringify(err));
     });
@@ -143,7 +134,7 @@ const getEmail = async (id) => {
   });
 }
 
-function scrapeOrderFromHtmlStr(htmlStr) {
+const scrapeOrderFromHtmlStr = (htmlStr) => {
   const $ = cheerio.load(htmlStr);
 
   const productText = $('td[class=name]').html()
@@ -167,8 +158,3 @@ function scrapeOrderFromHtmlStr(htmlStr) {
     orderedAt: orderedAt
   };
 }
-
-exports.asyncF = async (req, res) => {
-  res.set('Content-Type', 'application/json');
-  res.status(200).send(JSON.stringify(1));
-};
