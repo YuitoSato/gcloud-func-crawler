@@ -109,14 +109,25 @@ exports.listEmailsFromAmazon = async (req, res) => {
     ({
       auth: oauth2Client,
       userId: 'me',
+      maxResults: 10,
       q: 'from:auto-confirm@amazon.co.jp'
     })
     .then(res => res.messages)
-    .then(messages => getEmail(messages[0].id))
-    .then(message => {
-      const result = new Buffer(message.parts[1].body.data, 'base64').toString().replace(/[\\$'"]/g, "");
+    .then(messages => { 
+      return Promise.all(messages.map(message => 
+        getEmail(message.id)
+      ))
+    })
+    .then(messages => {
+      console.log(messages);
+      return messages.map(message => {
+        const result = new Buffer(message.parts[1].body.data, 'base64').toString().replace(/[\\$'"]/g, "");
+        return scrapeOrderFromHtmlStr(result);
+      })
+    })
+    .then(orders => {
       res.set('Content-Type', 'application/json');
-      res.status(200).send(JSON.stringify(scrapeOrderFromHtmlStr(result)));
+      res.status(200).send(JSON.stringify(orders));
     })
     .catch(err => {
       res.set('Content-Type', 'application/json');
