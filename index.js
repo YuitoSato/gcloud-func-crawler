@@ -109,7 +109,7 @@ exports.listEmailsFromAmazon = async (req, res) => {
     ({
       auth: oauth2Client,
       userId: 'me',
-      maxResults: 10,
+      maxResults: 2,
       q: 'from:auto-confirm@amazon.co.jp'
     })
     .then(res => res.messages)
@@ -119,15 +119,22 @@ exports.listEmailsFromAmazon = async (req, res) => {
       ))
     })
     .then(messages => {
-      console.log(messages);
-      return messages.map(message => {
-        const result = new Buffer(message.parts[1].body.data, 'base64').toString().replace(/[\\$'"]/g, "");
+      const orders = messages.map(message => {
+        const result = Buffer.from(message.parts[1].body.data, 'base64').toString().replace(/[\\$'"]/g, "");
         return scrapeOrderFromHtmlStr(result);
-      })
+      });
+      return orders;
     })
     .then(orders => {
       res.set('Content-Type', 'application/json');
-      res.status(200).send(JSON.stringify(orders));
+
+      try {
+        const result = orders.flat(1);
+        res.status(200).send(JSON.stringify(result));
+      } catch (err) {
+        console.error(err);
+        res.status(500).send(JSON.stringify(err));
+      }
     })
     .catch(err => {
       res.set('Content-Type', 'application/json');
@@ -147,25 +154,37 @@ const getEmail = async (id) => {
 
 const scrapeOrderFromHtmlStr = (htmlStr) => {
   const $ = cheerio.load(htmlStr);
-
-  const productText = $('td[class=name]').html()
-    .replace(/<br>/, '<div class=\"category\">')
-    .replace(/<br>/, '</div><div class=\"distributor\">')
-    .replace(/<br>/, '</div>');
-
-  const $product = cheerio.load(productText);
-
-  const name = $product('a').text().trim();
-  const category = $product('div[class=category]').text().trim();
-  const distributor = $product('div[class=distributor]').text().trim();
-  const price = $('td[class=price] strong').text().replace(/[￥,]/g, '').trim();
+  const $items = $('table[id=itemDetails]').toArray();
   const orderedAt = $('table[id=orderDetails] tbody tr td span').text().replace(/注文日：/, '').trim();
 
-  return {
-    name: name,
-    category: category,
-    distributor: distributor,
-    price: price,
-    orderedAt: orderedAt
-  };
+  return $items.map(ele => {
+    $ele = cheerio.load(ele);
+    const productText = $ele('td[class=name]').html()
+      .replace(/<br>/, '<div class=\"category\">')
+      .replace(/<br>/, '</div><div class=\"distributor\">')
+      .replace(/<br>/, '</div>');
+
+    const $product = cheerio.load(productText);
+
+    const name = $product('a').text().trim();
+    const category = $product('div[class=category]').text().trim();
+    const distributor = $product('div[class=distributor]').text().trim();
+    const price = $ele('td[class=price] strong').text().replace(/[￥,]/g, '').trim();
+
+    return {
+      name: name,
+      category: category,
+      distributor: distributor,
+      price: price,
+      orderedAt: orderedAt
+    };
+  });
 }
+
+Object.defineProperty(Array.prototype, 'flat', {
+  value: function(depth = 1) {
+    return this.reduce(function (flat, toFlatten) {
+      return flat.concat((Array.isArray(toFlatten) && (depth-1)) ? toFlatten.flat(depth-1) : toFlatten);
+    }, []);
+  }
+});
