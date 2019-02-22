@@ -7,7 +7,7 @@ const { promisify } = require('util');
 
 DebugAgent.start();
 
-const env = "local";
+const env = "production";
 
 const prefix = {
   "local": "/gcloud-func-crawler/us-central1",
@@ -70,7 +70,6 @@ exports.oauth2callback = (req, res) => {
   const code = req.query.code;
 
   return new Promise((resolve, reject) => {
-    // OAuth2: Exchange authorization code for access token
     oauth2Client.getToken(code, (err, token) => {
       if (err) {
         return reject(err);
@@ -85,15 +84,6 @@ exports.oauth2callback = (req, res) => {
     .catch((err) => {
       res.status(500).send('Something went wrong; check the logs.');
     });
-
-  // return promisify(oauth2Client.getToken)(code)
-  //   .then((token) => {
-  //     res.cookie('token', JSON.stringify(token));
-  //     res.redirect(prefix[env] + '/listEmailsFromAmazon');
-  //   })
-  //   .catch((err) => {
-  //     res.status(500).send('Something went wrong; check the logs.');
-  //   });
 };
 
 exports.listEmailsFromAmazon = async (req, res) => {
@@ -113,8 +103,8 @@ exports.listEmailsFromAmazon = async (req, res) => {
       q: 'from:auto-confirm@amazon.co.jp'
     })
     .then(res => res.messages)
-    .then(messages => { 
-      return Promise.all(messages.map(message => 
+    .then(messages => {
+      return Promise.all(messages.map(message =>
         getEmail(message.id)
       ))
     })
@@ -182,9 +172,9 @@ const scrapeOrderFromHtmlStr = (htmlStr) => {
 }
 
 Object.defineProperty(Array.prototype, 'flat', {
-  value: function(depth = 1) {
+  value: function (depth = 1) {
     return this.reduce(function (flat, toFlatten) {
-      return flat.concat((Array.isArray(toFlatten) && (depth-1)) ? toFlatten.flat(depth-1) : toFlatten);
+      return flat.concat((Array.isArray(toFlatten) && (depth - 1)) ? toFlatten.flat(depth - 1) : toFlatten);
     }, []);
   }
 });
